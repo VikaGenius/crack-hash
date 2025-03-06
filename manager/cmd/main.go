@@ -2,14 +2,20 @@ package cmd
 
 import (
 	"net/http"
-    "github.com/gorilla/mux"	
-	
-	"manager/internal/services"
+	"os"
+	"strings"
+
+	"github.com/gorilla/mux"
+
 	"manager/internal/handlers"
+	"manager/internal/services"
 )
 
 func main() {
-	hashService := services.NewService()
+	workerURLs := os.Getenv("WORKER_URLS")
+    workers := strings.Split(workerURLs, ",")
+
+	hashService := services.NewService(workers)
     hashHandler := handlers.NewHashHandler(hashService)
 
     r := mux.NewRouter()

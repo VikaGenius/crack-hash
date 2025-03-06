@@ -1,15 +1,18 @@
 package main
 
 import (
-    "net/http"
-    "github.com/gorilla/mux"
+	"net/http"
+	"os"
 
-    "worker/internal/handlers"
-    "worker/internal/services"
+	"github.com/gorilla/mux"
+
+	"worker/internal/handlers"
+	"worker/internal/services"
 )
 
 func main() {
-    taskService := services.NewTaskService()
+    managerURL := os.Getenv("MANAGER_URL")
+    taskService := services.NewTaskService(managerURL)
     taskHandler := handlers.NewTaskHandler(taskService)
 
     r := mux.NewRouter()
