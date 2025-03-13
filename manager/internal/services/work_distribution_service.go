@@ -34,6 +34,7 @@ const (
     StatusInProgress string = "IN_PROGRESS"
     StatusReady      string = "READY"
     StatusError      string = "ERROR"
+    StatusPartiallyReady string = "PARTIALLY_READY"
 )
 
 func NewService(workers []string) *Service {
@@ -72,6 +73,10 @@ func (s *Service) UpdateRequest(requestId string, partNumber int, answers []stri
     }
 
     cr.Data = append(cr.Data, answers...)
+
+    if len(cr.Data) > 0 && len(cr.Data) < cr.Workers {
+        cr.Status = StatusPartiallyReady
+    }
 
     if len(cr.Data) >= cr.Workers {
         cr.Status = StatusReady
@@ -117,9 +122,15 @@ func (s *Service) distributeWork(cr *CrackRequest, requestId string) {
             results[partNumber] = result
         case <-time.After(3000 * time.Second): // Таймаут 5 минут
             log.Printf("Timeout for request %s, part %d", requestId, partNumber)
+
             s.mu.Lock()
-            cr.Status = StatusError
+            if len(cr.Data) > 0 {
+                cr.Status = StatusPartiallyReady
+            } else {
+                cr.Status = StatusError
+            }
             s.mu.Unlock()
+
             return
         }
     }
