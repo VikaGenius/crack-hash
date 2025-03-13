@@ -32,7 +32,6 @@ type CrackRequest struct {
     Progress  int
 }
 
-
 const (
     StatusInProgress string = "IN_PROGRESS"
     StatusReady      string = "READY"
@@ -77,6 +76,8 @@ func (s *Service) UpdateRequest(requestId string, partNumber int, answers []stri
         return 
     }
 
+    fmt.Print("Полученные от воркера ответы: ")
+    fmt.Println(answers)
     cr.Data = append(cr.Data, answers...)
 
     if len(cr.Data) > 0 && len(cr.Data) < cr.Workers {
@@ -85,22 +86,23 @@ func (s *Service) UpdateRequest(requestId string, partNumber int, answers []stri
 
     if len(cr.Data) >= cr.Workers {
         cr.Status = StatusReady
+        cr.Progress = 100
     }
 
     cr.Progress += 100 / cr.Workers
     printProgress(requestId, cr.Progress)
 }
 
-func (s *Service) GetStatus(requestId string) (string, []string) {
+func (s *Service) GetStatus(requestId string) (string, []string, string) {
     s.mu.RLock()
     defer s.mu.RUnlock()
 
     cr, exists := s.requests[requestId]
     if !exists {
-        return StatusError, nil
+        return StatusError, nil, ""
     }
 
-    return cr.Status, cr.Data
+    return cr.Status, cr.Data, fmt.Sprintf("%d%%", cr.Progress)
 }
 
 func (s *Service) distributeWork(cr *CrackRequest, requestId string) {
@@ -145,7 +147,7 @@ func (s *Service) distributeWork(cr *CrackRequest, requestId string) {
 
     s.mu.Lock()
     cr.Status = StatusReady
-    cr.Data = flattenResults(results)
+    cr.Data = append(cr.Data, flattenResults(results)...)
     s.mu.Unlock()
 }
 

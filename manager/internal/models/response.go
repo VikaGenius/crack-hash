@@ -7,6 +7,7 @@ type StartWorkResponse struct {
 type CrackStatusResponse struct {
     Status    string   `json:"status"`
     Data      []string `json:"data"`
+    Progress  string   `json:"progress"`
 }
 
 type CrackHashWorkerResponse struct {

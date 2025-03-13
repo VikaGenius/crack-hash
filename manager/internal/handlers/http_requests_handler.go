@@ -1,11 +1,11 @@
 package handlers
 
 import (
-    "encoding/json"
-    "net/http"
+	"encoding/json"
+	"net/http"
 
-    "manager/internal/models"
-    "manager/internal/services"
+	"manager/internal/models"
+	"manager/internal/services"
 )
 
 type Handler struct {
@@ -46,11 +46,12 @@ func (h *Handler) StatusHandler(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    status, data := h.service.GetStatus(requestId)
-
+    status, data, progress := h.service.GetStatus(requestId)
+    
     response := models.CrackStatusResponse{
         Status: status,
         Data:   data,
+        Progress: progress,
     }
 
     w.Header().Set("Content-Type", "application/json")
