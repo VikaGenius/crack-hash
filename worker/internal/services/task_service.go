@@ -35,6 +35,8 @@ func (s *TaskService) ProcessTask(req models.CrackHashManagerRequest) []string {
 }
 
 func (s *TaskService) SendResultsToManager(requestId string, partNumber int, answers []string) {
+    fmt.Println("Отправляю результат менеджеру")
+
     response := models.CrackHashWorkerResponse{
         RequestId:  requestId,
         PartNumber: partNumber,

@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -27,6 +29,7 @@ type CrackRequest struct {
     Data      []string
     Workers   int
     Done      chan []string
+    Progress  int
 }
 
 
@@ -64,6 +67,8 @@ func (s *Service) StartCrack(hash string, maxLength int) string {
 }
 
 func (s *Service) UpdateRequest(requestId string, partNumber int, answers []string) {
+    fmt.Println("Получаю результат от воркера")
+
     s.mu.Lock()
     defer s.mu.Unlock()
 
@@ -81,6 +86,9 @@ func (s *Service) UpdateRequest(requestId string, partNumber int, answers []stri
     if len(cr.Data) >= cr.Workers {
         cr.Status = StatusReady
     }
+
+    cr.Progress += 100 / cr.Workers
+    printProgress(requestId, cr.Progress)
 }
 
 func (s *Service) GetStatus(requestId string) (string, []string) {
@@ -159,8 +167,10 @@ func (s *Service) sendTaskToWorker(workerAddress string, task models.CrackHashMa
 
     var result models.CrackHashWorkerResponse
     if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-        log.Printf("Error decoding worker response: %v", err)
-        return
+        if err != io.EOF {
+            log.Printf("Error decoding worker response: %v", err)
+            return
+        }
     }
 
     // Возвращаем результат в канал
@@ -191,4 +201,12 @@ func flattenResults(results [][]string) []string {
 
 func generateRequestId() string {
     return uuid.New().String()
+}
+
+func printProgress(requestId string, progress int) {
+    barWidth := 50
+    filled := progress * barWidth / 100
+    bar := strings.Repeat("=", filled) + strings.Repeat(" ", barWidth-filled)
+    fmt.Printf("\rЗадача %s: [%s] %d%%", requestId, bar, progress)
+    fmt.Println()
 }
