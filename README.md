@@ -39,7 +39,7 @@ CrackHash — это распределенная система для взло
 
 ### 1. Клонируйте репозиторий
 ```bash
-git clone https://github.com/ваш-username/crackhash.git
+git clone https://github.com/VikaGenius/crack-hash.git
 cd crackhash
 ```
 
