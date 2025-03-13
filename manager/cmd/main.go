@@ -1,4 +1,4 @@
-package cmd
+package main
 
 import (
 	"net/http"
@@ -14,7 +14,7 @@ import (
 func main() {
 	workerURLs := os.Getenv("WORKER_URLS")
     workers := strings.Split(workerURLs, ",")
-
+	
 	hashService := services.NewService(workers)
     hashHandler := handlers.NewHashHandler(hashService)
 

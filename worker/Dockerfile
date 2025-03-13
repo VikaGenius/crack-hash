@@ -1,6 +1,6 @@
 FROM golang:1.23
 
-WORKDIR /app 
+WORKDIR /app
 
 # Копируем файлы проекта
 COPY . .

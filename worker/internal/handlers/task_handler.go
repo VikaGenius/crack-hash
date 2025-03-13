@@ -27,14 +27,4 @@ func (h *TaskHandler) TaskHandler(w http.ResponseWriter, r *http.Request) {
     answers := h.taskService.ProcessTask(req)
 
     h.taskService.SendResultsToManager(req.RequestId, req.PartNumber, answers)
-
-    // response := models.CrackHashWorkerResponse{
-    //     RequestId:  req.RequestId,
-    //     PartNumber: req.PartNumber,
-    //     Answers:    answers,
-    // }
-
-    // w.Header().Set("Content-Type", "application/json")
-    // w.WriteHeader(http.StatusOK)
-    // json.NewEncoder(w).Encode(response)
 }

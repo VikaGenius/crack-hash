@@ -1,15 +1,17 @@
 package services
 
 import (
-    "bytes"
-    "encoding/json"
-    "log"
-    "net/http"
-    "sync"
-    "time"
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"log"
+	"net/http"
+	"sync"
+	"time"
 
-    "github.com/google/uuid"
-    "manager/internal/models"
+	"manager/internal/models"
+
+	"github.com/google/uuid"
 )
 
 type Service struct {
@@ -60,9 +62,38 @@ func (s *Service) StartCrack(hash string, maxLength int) string {
     return requestId
 }
 
-func (s *Service) distributeWork(cr *CrackRequest, requestId string) {
-    defer close(cr.Done)
+func (s *Service) UpdateRequest(requestId string, partNumber int, answers []string) {
+    s.mu.Lock()
+    defer s.mu.Unlock()
 
+    cr, exists := s.requests[requestId]
+    if !exists {
+        return 
+    }
+
+    cr.Data = append(cr.Data, answers...)
+
+    if len(cr.Data) >= cr.Workers {
+        cr.Status = StatusReady
+    }
+}
+
+func (s *Service) GetStatus(requestId string) (string, []string) {
+    s.mu.RLock()
+    defer s.mu.RUnlock()
+
+    cr, exists := s.requests[requestId]
+    if !exists {
+        return StatusError, nil
+    }
+
+    return cr.Status, cr.Data
+}
+
+func (s *Service) distributeWork(cr *CrackRequest, requestId string) {
+    fmt.Println("Делегирую работу подчиненным))")
+
+    defer close(cr.Done)
     alphabet := generateAlphabet()
 
     partCount := len(s.workers)
@@ -105,7 +136,7 @@ func (s *Service) sendTaskToWorker(workerAddress string, task models.CrackHashMa
         log.Printf("Error marshaling task: %v", err)
         return
     }
-
+    fmt.Println("Отправляю запрос рабочему")
     resp, err := http.Post(workerAddress+"/internal/api/worker/hash/crack/task", 
 						   "application/json", 
 						   bytes.NewBuffer(jsonData))
@@ -126,34 +157,6 @@ func (s *Service) sendTaskToWorker(workerAddress string, task models.CrackHashMa
     cr := s.requests[requestId]
     cr.Done <- result.Answers
     s.mu.Unlock()
-}
-
-func (s *Service) UpdateRequest(requestId string, partNumber int, answers []string) {
-    s.mu.Lock()
-    defer s.mu.Unlock()
-
-    cr, exists := s.requests[requestId]
-    if !exists {
-        return 
-    }
-
-    cr.Data = append(cr.Data, answers...)
-
-    if len(cr.Data) >= cr.Workers {
-        cr.Status = StatusReady
-    }
-}
-
-func (s *Service) GetStatus(requestId string) (string, []string) {
-    s.mu.RLock()
-    defer s.mu.RUnlock()
-
-    cr, exists := s.requests[requestId]
-    if !exists {
-        return StatusError, nil
-    }
-
-    return cr.Status, cr.Data
 }
 
 func generateAlphabet() []string {

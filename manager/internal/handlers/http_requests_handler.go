@@ -27,7 +27,7 @@ func (h *Handler) StartCrackHandler(w http.ResponseWriter, r *http.Request) {
         http.Error(w, "Hash and maxLength are required", http.StatusBadRequest)
         return
     }
-
+    
     requestId := h.service.StartCrack(req.Hash, req.MaxLength)
 
     response := models.StartWorkResponse{

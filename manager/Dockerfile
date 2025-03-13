@@ -1,6 +1,6 @@
 FROM golang:1.23
 
-WORKDIR /app 
+WORKDIR /app
 
 # Копируем файлы проекта
 COPY . .
@@ -13,8 +13,6 @@ RUN go build -o manager .
 
 # Открываем порт для HTTP-запросов
 EXPOSE 8080
-
-RUN chmod +x manager
 
 # Запускаем приложение
 CMD ["./manager"]
