@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
+	//"io"
 	"log"
 	"net/http"
 	"strings"
@@ -76,18 +76,7 @@ func (s *Service) UpdateRequest(requestId string, partNumber int, answers []stri
         return 
     }
 
-    fmt.Print("Полученные от воркера ответы: ")
-    fmt.Println(answers)
-    cr.Data = append(cr.Data, answers...)
-
-    if len(cr.Data) > 0 && len(cr.Data) < cr.Workers {
-        cr.Status = StatusPartiallyReady
-    }
-
-    if len(cr.Data) >= cr.Workers {
-        cr.Status = StatusReady
-        cr.Progress = 100
-    }
+    cr.Done <- answers
 
     cr.Progress += 100 / cr.Workers
     printProgress(requestId, cr.Progress)
@@ -106,7 +95,7 @@ func (s *Service) GetStatus(requestId string) (string, []string, string) {
 }
 
 func (s *Service) distributeWork(cr *CrackRequest, requestId string) {
-    fmt.Println("Делегирую работу подчиненным))")
+    fmt.Println("Распределяю работу между подчиненными!")
 
     defer close(cr.Done)
     alphabet := generateAlphabet()
@@ -134,7 +123,7 @@ func (s *Service) distributeWork(cr *CrackRequest, requestId string) {
             log.Printf("Timeout for request %s, part %d", requestId, partNumber)
 
             s.mu.Lock()
-            if len(cr.Data) > 0 {
+            if len(results) > 0 {
                 cr.Status = StatusPartiallyReady
             } else {
                 cr.Status = StatusError
@@ -147,6 +136,7 @@ func (s *Service) distributeWork(cr *CrackRequest, requestId string) {
 
     s.mu.Lock()
     cr.Status = StatusReady
+    cr.Progress = 100
     cr.Data = append(cr.Data, flattenResults(results)...)
     s.mu.Unlock()
 }
@@ -166,20 +156,6 @@ func (s *Service) sendTaskToWorker(workerAddress string, task models.CrackHashMa
         return
     }
     defer resp.Body.Close()
-
-    var result models.CrackHashWorkerResponse
-    if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-        if err != io.EOF {
-            log.Printf("Error decoding worker response: %v", err)
-            return
-        }
-    }
-
-    // Возвращаем результат в канал
-    s.mu.Lock()
-    cr := s.requests[requestId]
-    cr.Done <- result.Answers
-    s.mu.Unlock()
 }
 
 func generateAlphabet() []string {
