@@ -1,35 +1,25 @@
 package services
 
 import (
-	"bytes"
-	"encoding/json"
+	"context"
 	"fmt"
-	//"io"
+
 	"log"
-	"net/http"
 	"strings"
 	"sync"
 	"time"
 
 	"manager/internal/models"
-
-	"github.com/google/uuid"
+    "manager/internal/repository"
+	mq "manager/internal/message_queue"
 )
 
 type Service struct {
-    requests map[string]*CrackRequest // Хранит задачи по их ID
-    mu       sync.RWMutex            // Для потокобезопасного доступа к requests
-    workers  []string                // Адреса воркеров
-}
-
-type CrackRequest struct {
-    Hash      string
-    MaxLength int
-    Status    string
-    Data      []string
-    Workers   int
-    Done      chan []string
-    Progress  int
+    requests map[string]*models.CrackRequest //хранит задачи по их ID
+    mu       sync.RWMutex            //для потокобезопасного доступа к requests
+    workers  []string                //адреса воркеров
+    repo     *repository.MongoRepository
+	queue     *mq.ManagerQueue
 }
 
 const (
@@ -39,123 +29,114 @@ const (
     StatusPartiallyReady string = "PARTIALLY_READY"
 )
 
-func NewService(workers []string) *Service {
-    return &Service{
-        requests: make(map[string]*CrackRequest),
+func NewService(workers []string, repo *repository.MongoRepository, queue *mq.ManagerQueue,) *Service {
+    service := &Service{
+		repo:     repo,
         workers:  workers,
-    }
+		requests: make(map[string]*models.CrackRequest),
+		queue: queue,
+	}
+
+	//запускаем consumer для результатов
+	if err := queue.ConsumeResults(service.handleResult); err != nil {
+		log.Fatalf("Failed to start result consumer: %v", err)
+	}
+
+	//восстановление незавершенных задач при старте
+	service.restorePendingRequests()
+
+	return service
 }
 
-func (s *Service) StartCrack(hash string, maxLength int) string {
-    requestId := generateRequestId()
-    cr := &CrackRequest{
-        Hash:      hash,
-        MaxLength: maxLength,
-        Status:    StatusInProgress,
-        Workers:   len(s.workers),
-        Done:      make(chan []string),
-    }
+func (s *Service) StartCrack(hash string, maxLength int) (string, error) {
+	req := models.NewCrackRequest(hash, maxLength)
 
-    s.mu.Lock()
-    s.requests[requestId] = cr
-    s.mu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 
-    go s.distributeWork(cr, requestId)
+	//сохраняем запрос в БД с подтверждением репликации
+	if err := s.repo.SaveRequest(ctx, req); err != nil {
+		return "", err
+	}
 
-    return requestId
+	s.mu.Lock()
+	s.requests[req.RequestID] = req
+	s.mu.Unlock()
+
+	go s.distributeWork(req)
+	return req.RequestID, nil
 }
 
-func (s *Service) UpdateRequest(requestId string, partNumber int, answers []string) {
-    fmt.Println("Получаю результат от воркера")
+func (s *Service) UpdateRequest(requestID string, partNumber int, answers []string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-    s.mu.Lock()
-    defer s.mu.Unlock()
+	req, exists := s.requests[requestID]
+	if !exists {
+		log.Printf("Request %s not found", requestID)
+		return
+	}
 
-    cr, exists := s.requests[requestId]
-    if !exists {
-        return 
+	fmt.Print("Получаю результат от воркера: ")
+	fmt.Println(answers)
+	req.Data = append(req.Data, answers...)
+	req.Progress += 100 / len(s.workers)
+	if req.Progress >= 99 {
+		req.Progress = 100
+        req.Status = StatusReady
     }
 
-    cr.Done <- answers
+	//обновляем в БД
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := s.repo.UpdateRequest(ctx, req); err != nil {
+		log.Printf("Failed to update request %s: %v", requestID, err)
+	}
 
-    cr.Progress += 100 / cr.Workers
-    printProgress(requestId, cr.Progress)
+	printProgress(requestID, req.Progress)
 }
 
-func (s *Service) GetStatus(requestId string) (string, []string, string) {
-    s.mu.RLock()
-    defer s.mu.RUnlock()
+func (s *Service) GetStatus(requestID string) (string, []string, string) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
-    cr, exists := s.requests[requestId]
-    if !exists {
-        return StatusError, nil, ""
-    }
+	if req, exists := s.requests[requestID]; exists {
+		return req.Status, req.Data, fmt.Sprintf("%d%%", req.Progress)
+	}
 
-    return cr.Status, cr.Data, fmt.Sprintf("%d%%", cr.Progress)
+	//если нет в памяти, проверяем в БД
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	req, err := s.repo.GetRequest(ctx, requestID)
+	if err != nil {
+		return StatusError, nil, "0%"
+	}
+
+	return req.Status, req.Data, fmt.Sprintf("%d%%", req.Progress)
 }
 
-func (s *Service) distributeWork(cr *CrackRequest, requestId string) {
-    fmt.Println("Распределяю работу между подчиненными!")
+func (s *Service) distributeWork(req *models.CrackRequest) {
+	alphabet := generateAlphabet()
+	partCount := len(s.workers)
 
-    defer close(cr.Done)
-    alphabet := generateAlphabet()
+	for partNumber := 0; partNumber < partCount; partNumber++ {
+		task := models.TaskMessage{
+			RequestId:  req.RequestID,
+			PartNumber: partNumber,
+			PartCount:  partCount,
+			Hash:       req.Hash,
+			MaxLength:  req.MaxLength,
+			Alphabet:   alphabet,
+		}
 
-    partCount := len(s.workers)
-    for partNumber := 0; partNumber < partCount; partNumber++ {
-        task := models.CrackHashManagerRequest{
-            RequestId:  requestId,
-            PartNumber: partNumber,
-            PartCount:  partCount,
-            Hash:       cr.Hash,
-            MaxLength:  cr.MaxLength,
-            Alphabet:   alphabet,
-        }
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
 
-        go s.sendTaskToWorker(s.workers[partNumber], task, requestId, partNumber)
-    }
-
-    results := make([][]string, partCount)
-    for partNumber := 0; partNumber < partCount; partNumber++ {
-        select {
-        case result := <-cr.Done:
-            results[partNumber] = result
-        case <-time.After(3000 * time.Second): // Таймаут 5 минут
-            log.Printf("Timeout for request %s, part %d", requestId, partNumber)
-
-            s.mu.Lock()
-            if len(results) > 0 {
-                cr.Status = StatusPartiallyReady
-            } else {
-                cr.Status = StatusError
-            }
-            s.mu.Unlock()
-
-            return
-        }
-    }
-
-    s.mu.Lock()
-    cr.Status = StatusReady
-    cr.Progress = 100
-    cr.Data = append(cr.Data, flattenResults(results)...)
-    s.mu.Unlock()
-}
-
-func (s *Service) sendTaskToWorker(workerAddress string, task models.CrackHashManagerRequest, requestId string, partNumber int) {
-    jsonData, err := json.Marshal(task)
-    if err != nil {
-        log.Printf("Error marshaling task: %v", err)
-        return
-    }
-    fmt.Println("Отправляю запрос рабочему")
-    resp, err := http.Post(workerAddress+"/internal/api/worker/hash/crack/task", 
-						   "application/json", 
-						   bytes.NewBuffer(jsonData))
-    if err != nil {
-        log.Printf("Error sending task to worker: %v", err)
-        return
-    }
-    defer resp.Body.Close()
+		if err := s.queue.PublishTask(ctx, task); err != nil {
+			log.Printf("Failed to publish task for request %s, part %d: %v", req.RequestID, partNumber, err)
+		}
+	}
 }
 
 func generateAlphabet() []string {
@@ -169,22 +150,34 @@ func generateAlphabet() []string {
     return alphabet
 }
 
-func flattenResults(results [][]string) []string {
-    var flat []string
-    for _, part := range results {
-        flat = append(flat, part...)
-    }
-    return flat
-}
-
-func generateRequestId() string {
-    return uuid.New().String()
-}
-
 func printProgress(requestId string, progress int) {
     barWidth := 50
     filled := progress * barWidth / 100
     bar := strings.Repeat("=", filled) + strings.Repeat(" ", barWidth-filled)
     fmt.Printf("\rЗадача %s: [%s] %d%%", requestId, bar, progress)
     fmt.Println()
+}
+
+func (s *Service) restorePendingRequests() {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	pendingRequests, err := s.repo.GetPendingRequests(ctx)
+	if err != nil {
+		log.Printf("Failed to restore pending requests: %v", err)
+		return
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, req := range pendingRequests {
+		s.requests[req.RequestID] = &req
+		go s.distributeWork(&req)
+	}
+}
+
+func (s *Service) handleResult(result models.ResultMessage) error {
+	s.UpdateRequest(result.RequestId, result.PartNumber, result.Answers)
+	return nil
 }

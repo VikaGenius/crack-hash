@@ -28,7 +28,11 @@ func (h *Handler) StartCrackHandler(w http.ResponseWriter, r *http.Request) {
         return
     }
     
-    requestId := h.service.StartCrack(req.Hash, req.MaxLength)
+    requestId, error := h.service.StartCrack(req.Hash, req.MaxLength)
+    if error != nil {
+        http.Error(w, "Service failed", http.StatusBadRequest)
+        return
+    }
 
     response := models.StartWorkResponse{
         RequestId: requestId,

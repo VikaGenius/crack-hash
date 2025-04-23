@@ -1,28 +1,37 @@
 package services
 
 import (
-	"bytes"
+	"context"
 	"crypto/md5"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"log"
 	"math"
-	"net/http"
 	"strings"
+	"time"
 
+	mq "worker/internal/message_queue"
 	"worker/internal/models"
 )
 
 type TaskService struct {
+    queue *mq.WorkerQueue
     managerURL string
 }
 
-func NewTaskService(managerURL string) *TaskService {
-    return &TaskService{managerURL: managerURL}
+func NewTaskService(managerURL string, queue *mq.WorkerQueue) *TaskService {
+    service := &TaskService{
+        managerURL: managerURL,
+        queue: queue,
+    }
+
+    if err := queue.ConsumeTasks(service.handleTask); err != nil {
+		log.Fatalf("Failed to start task consumer: %v", err)
+	}
+    return service
 }
 
-func (s *TaskService) ProcessTask(req models.CrackHashManagerRequest) []string {
+func (s *TaskService) ProcessTask(req models.TaskMessage) []string {
     // вычисляем объем работы для текущего воркера
     alphabetSize := len(req.Alphabet)
     totalCombinations := totalCombinations(alphabetSize, req.MaxLength)
@@ -34,42 +43,20 @@ func (s *TaskService) ProcessTask(req models.CrackHashManagerRequest) []string {
     return generateAndCheckCombinations(req.Alphabet, req.MaxLength, start, end, req.Hash)
 }
 
-func (s *TaskService) SendResultsToManager(requestId string, partNumber int, answers []string) {
-    fmt.Println("Отправляю результат менеджеру")
+func (s *TaskService) handleTask(task models.TaskMessage) error {
+	answers := s.ProcessTask(task)
 
-    response := models.CrackHashWorkerResponse{
-        RequestId:  requestId,
-        PartNumber: partNumber,
-        Answers:    answers,
-    }
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 
-    jsonData, err := json.Marshal(response)
-    if err != nil {
-        log.Printf("Error marshaling response: %v", err)
-        return
-    }
+    fmt.Print("Отправляю результат менеджеру: ")
+    fmt.Println(answers)
 
-    // отправка PATCH-запроса менеджеру
-    req, err := http.NewRequest(http.MethodPatch, 
-                                s.managerURL+"/internal/api/manager/hash/crack/request", 
-                                bytes.NewBuffer(jsonData))
-    if err != nil {
-        log.Printf("Error creating request: %v", err)
-        return
-    }
-    req.Header.Set("Content-Type", "application/json")
-
-    client := &http.Client{}
-    resp, err := client.Do(req)
-    if err != nil {
-        log.Printf("Error sending results to manager: %v", err)
-        return
-    }
-    defer resp.Body.Close()
-
-    if resp.StatusCode != http.StatusOK {
-        log.Printf("Manager returned status code: %d", resp.StatusCode)
-    }
+	return s.queue.PublishResult(ctx, models.ResultMessage{
+		RequestId:  task.RequestId,
+		PartNumber: task.PartNumber,
+		Answers:    answers,
+	})
 }
 
 func generateAndCheckCombinations(alphabet []string, maxLength int, start int, end int, targetHash string) []string {
