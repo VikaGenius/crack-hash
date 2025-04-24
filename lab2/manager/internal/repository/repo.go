@@ -90,10 +90,11 @@ func (r *MongoRepository) UpdateRequest(ctx context.Context, req *models.CrackRe
 	filter := bson.M{"request_id": req.RequestID}
 	update := bson.M{
 		"$set": bson.M{
-			"status":     req.Status,
-			"data":       req.Data,
-			"progress":   req.Progress,
-			"updated_at": time.Now(),
+			"status":         req.Status,
+			"data":           req.Data,
+			"progress":       req.Progress,
+			"completed_parts": req.CompletedParts,
+			"updated_at":     time.Now(),
 		},
 	}
 

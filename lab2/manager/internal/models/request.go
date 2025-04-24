@@ -22,17 +22,17 @@ type CrackHashManagerRequest struct {
 }
 
 type CrackRequest struct {
-	ID        primitive.ObjectID `bson:"_id,omitempty"`
-	RequestID string             `bson:"request_id"`
-	Hash      string             `bson:"hash"`
-	MaxLength int                `bson:"max_length"`
-	Status    string             `bson:"status"`
-	Data      []string           `bson:"data"`
-	Workers   int                `bson:"workers"`
-	Progress  int                `bson:"progress"`
-	Parts     []RequestPart      `bson:"parts"`
-	CreatedAt time.Time          `bson:"created_at"`
-	UpdatedAt time.Time          `bson:"updated_at"`
+	ID        		   primitive.ObjectID `bson:"_id,omitempty"`
+	RequestID 		   string             `bson:"request_id"`
+	Hash      		   string             `bson:"hash"`
+	MaxLength          int                `bson:"max_length"`
+	Status             string             `bson:"status"`
+	Data               []string           `bson:"data"`
+	Workers            int                `bson:"workers"`
+	Progress           int                `bson:"progress"`
+	CompletedParts     map[int]bool       `bson:"completed_parts"`
+	CreatedAt          time.Time          `bson:"created_at"`
+	UpdatedAt 	  	   time.Time          `bson:"updated_at"`
 }
 
 type RequestPart struct {
@@ -41,14 +41,16 @@ type RequestPart struct {
 	Answers    []string `bson:"answers"`
 }
 
-func NewCrackRequest(hash string, maxLength int) *CrackRequest {
+func NewCrackRequest(hash string, maxLength int, workers int) *CrackRequest {
 	return &CrackRequest{
 		RequestID: generateRequestID(),
 		Hash:      hash,
 		MaxLength: maxLength,
 		Status:    "IN_PROGRESS",
 		Data:      make([]string, 0),
+		Workers:   workers,
 		Progress:  0,
+		CompletedParts: make(map[int]bool),
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}

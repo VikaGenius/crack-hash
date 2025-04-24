@@ -4,6 +4,7 @@ package message_queue
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"time"
 
@@ -107,9 +108,18 @@ func (q *ManagerQueue) ConsumeResults(handler func(result models.ResultMessage) 
 			var result models.ResultMessage
 			if err := json.Unmarshal(msg.Body, &result); err != nil {
 				log.Printf("Failed to unmarshal result: %v", err)
-				msg.Nack(false, true) // requeue
+				msg.Nack(false, false) // requeue
 				continue
 			}
+
+			if result.RequestId == "" || result.PartNumber < 0 || len(result.Answers) == 0 {
+				log.Printf("Invalid result received: %+v", result)
+				msg.Nack(false, false) // Не requeue невалидный результат
+				continue
+			}
+
+			fmt.Print("Consume result: ")
+			fmt.Println(result)
 
 			if err := handler(result); err != nil {
 				log.Printf("Failed to handle result: %v", err)

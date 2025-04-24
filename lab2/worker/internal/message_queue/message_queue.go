@@ -3,6 +3,7 @@ package message_queue
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"time"
 
@@ -80,45 +81,57 @@ func (q *WorkerQueue) PublishResult(ctx context.Context, result models.ResultMes
 }
 
 func (q *WorkerQueue) ConsumeTasks(handler func(task models.TaskMessage) error) error {
-	if err := q.channel.Qos(
-		1,     // prefetch count
-		0,     // prefetch size
-		false, // global
-	); err != nil {
-		return err
-	}
+    if err := q.channel.Qos(
+        1,     // prefetch count
+        0,     // prefetch size
+        false, // global
+    ); err != nil {
+        return fmt.Errorf("failed to set QoS: %w", err)
+    }
 
-	msgs, err := q.channel.Consume(
-		q.queueName, // queue
-		"",          // consumer
-		false,       // auto-ack
-		false,       // exclusive
-		false,       // no-local
-		false,       // no-wait
-		nil,         // args
-	)
-	if err != nil {
-		return err
-	}
+    msgs, err := q.channel.Consume(
+        q.queueName, // queue
+        "",          // consumer
+        false,       // auto-ack
+        false,       // exclusive
+        false,       // no-local
+        false,       // no-wait
+        nil,         // args
+    )
+    if err != nil {
+        return fmt.Errorf("failed to consume messages: %w", err)
+    }
 
-	go func() {
-		for msg := range msgs {
-			var task models.TaskMessage
-			if err := json.Unmarshal(msg.Body, &task); err != nil {
-				log.Printf("Failed to unmarshal task: %v", err)
-				msg.Nack(false, true) // requeue
-				continue
-			}
+    go func() {
+        for msg := range msgs {
+            var task models.TaskMessage
+            if err := json.Unmarshal(msg.Body, &task); err != nil {
+                log.Printf("Failed to unmarshal task: %v. Message body: %s", err, string(msg.Body))
+                msg.Nack(false, false) // Не requeue битое сообщение
+                continue
+            }
 
-			if err := handler(task); err != nil {
-				log.Printf("Failed to handle task: %v", err)
-				msg.Nack(false, true) // requeue
-				continue
-			}
+            // Валидация задачи
+            if task.RequestId == "" || task.PartCount == 0 || task.Hash == "" || len(task.Alphabet) == 0 {
+                log.Printf("Invalid task received: %+v", task)
+                msg.Nack(false, false) // Не requeue невалидную задачу
+                continue
+            }
 
-			msg.Ack(false)
-		}
-	}()
+			fmt.Print("Получил задачу от менеджера: ")
+			fmt.Println(task)
 
-	return nil
+            if err := handler(task); err != nil {
+                log.Printf("Failed to handle task %s part %d: %v", task.RequestId, task.PartNumber, err)
+                msg.Nack(false, true) // Requeue для повторной попытки
+                continue
+            }
+
+            if err := msg.Ack(false); err != nil {
+                log.Printf("Failed to ack message: %v", err)
+            }
+        }
+    }()
+
+    return nil
 }

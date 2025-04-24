@@ -49,7 +49,11 @@ func NewService(workers []string, repo *repository.MongoRepository, queue *mq.Ma
 }
 
 func (s *Service) StartCrack(hash string, maxLength int) (string, error) {
-	req := models.NewCrackRequest(hash, maxLength)
+	totalWorkers := len(s.workers)
+	req := models.NewCrackRequest(hash, maxLength, totalWorkers)
+	for i := range totalWorkers {
+        req.CompletedParts[i] = false
+    }
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -79,11 +83,25 @@ func (s *Service) UpdateRequest(requestID string, partNumber int, answers []stri
 
 	fmt.Print("Получаю результат от воркера: ")
 	fmt.Println(answers)
-	req.Data = append(req.Data, answers...)
-	req.Progress += 100 / len(s.workers)
-	if req.Progress >= 99 {
-		req.Progress = 100
+
+	if answers[0] != "Not found" {
+		req.Data = append(req.Data, answers...)
+	}
+	
+    req.CompletedParts[partNumber] = true
+	completedCount := 0
+    for _, done := range req.CompletedParts {
+        if done {
+            completedCount++
+        }
+    }
+    req.Progress = (completedCount * 100) / req.Workers
+    
+    if req.Progress >= 99 {
         req.Status = StatusReady
+        req.Progress = 100
+    } else {
+        req.Status = StatusInProgress
     }
 
 	//обновляем в БД
@@ -120,24 +138,45 @@ func (s *Service) distributeWork(req *models.CrackRequest) {
 	alphabet := generateAlphabet()
 	partCount := len(s.workers)
 
-	for partNumber := 0; partNumber < partCount; partNumber++ {
-		task := models.TaskMessage{
-			RequestId:  req.RequestID,
-			PartNumber: partNumber,
-			PartCount:  partCount,
-			Hash:       req.Hash,
-			MaxLength:  req.MaxLength,
-			Alphabet:   alphabet,
+	const MaxRetries = 3
+	retryCounts := make(map[int]int)
+
+	for range MaxRetries {
+		for partNumber := range partCount {
+			if req.CompletedParts[partNumber] {
+				continue
+			}
+
+			// Пропускаем те, которые уже дошли до лимита
+			if retryCounts[partNumber] >= MaxRetries {
+				continue
+			}
+
+			task := models.TaskMessage{
+				RequestId:  req.RequestID,
+				PartNumber: partNumber,
+				PartCount:  partCount,
+				Hash:       req.Hash,
+				MaxLength:  req.MaxLength,
+				Alphabet:   alphabet,
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
+			err := s.queue.PublishTask(ctx, task)
+			if err != nil {
+				log.Printf("Не удалось отправить part %d (%s): %v", partNumber, req.RequestID, err)
+			}
+
+			retryCounts[partNumber]++
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
-		if err := s.queue.PublishTask(ctx, task); err != nil {
-			log.Printf("Failed to publish task for request %s, part %d: %v", req.RequestID, partNumber, err)
-		}
+		// Можно сделать паузу между попытками
+		time.Sleep(10 * time.Second)
 	}
 }
+
 
 func generateAlphabet() []string {
     alphabet := make([]string, 0, 36)

@@ -62,17 +62,3 @@ func (h *Handler) StatusHandler(w http.ResponseWriter, r *http.Request) {
     w.WriteHeader(http.StatusOK)
     json.NewEncoder(w).Encode(response)
 }
-
-func (h *Handler) UpdateRequestHandler(w http.ResponseWriter, r *http.Request) {
-    var workerResponse models.CrackHashWorkerResponse
-
-    if err := json.NewDecoder(r.Body).Decode(&workerResponse); err != nil {
-        http.Error(w, "Invalid request body", http.StatusBadRequest)
-        return
-    }
-
-    h.service.UpdateRequest(workerResponse.RequestId, workerResponse.PartNumber, workerResponse.Answers)
-
-    w.WriteHeader(http.StatusOK)
-    w.Write([]byte("Request updated"))
-}

@@ -73,7 +73,7 @@ func generateAndCheckCombinations(alphabet []string, maxLength int, start int, e
             continue
         }
 
-        for i := 0; i < numCombinations; i++ {
+        for i := range numCombinations {
             if currentIndex >= start && currentIndex < end {
                 combination := generateCombination(alphabet, length, i)
                 hash := md5Hash(combination)
@@ -83,18 +83,24 @@ func generateAndCheckCombinations(alphabet []string, maxLength int, start int, e
             }
             currentIndex++
             if currentIndex >= end {
+                if len(answers) == 0 {
+                    answers = append(answers, "Not found")
+                }
                 return answers
             }
         }
     }
 
+    if len(answers) == 0 {
+        answers = append(answers, "Not found")
+    }
     return answers
 }
 
 func generateCombination(alphabet []string, length int, index int) string {
     n := len(alphabet)
     combination := make([]string, length)
-    for i := 0; i < length; i++ {
+    for i := range length {
         combination[length-i-1] = alphabet[index%n]
         index /= n
     }
