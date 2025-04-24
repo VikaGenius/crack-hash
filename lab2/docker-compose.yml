@@ -9,7 +9,7 @@ services:
     environment:
       - WORKER_URLS=http://worker1:8081,http://worker2:8081,http://worker3:8081
       - RABBITMQ_URL=amqp://admin:admin@rabbitmq:5672/
-      - MONGO_URI=mongodb://mongo1:27017,mongo2:27018,mongo3:27019/?replicaSet=rs0
+      - MONGO_URI=mongodb://mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -82,88 +82,54 @@ services:
       - crackhash-net
 
   mongo1:
-    image: mongo:7.0
-    command: mongod --replSet rs0 --bind_ip_all --logpath /proc/1/fd/1 --logappend --quiet
+    image: mongo
+    command: ["mongod", "--replSet", "rs0"]
     ports:
-      - "27017:27017"
-    volumes:
-      - mongo1_data:/data/db
-    healthcheck:
-      test: echo 'db.runCommand("ping").ok' | mongosh --quiet | grep 1
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    logging:
-      options:
-        max-size: "10m"
-        max-file: "3"
+      - "27018:27017"
     networks:
       - crackhash-net
 
   mongo2:
-    image: mongo:7.0
-    command: mongod --replSet rs0 --bind_ip_all --logpath /proc/1/fd/1 --logappend --quiet
+    image: mongo
+    command: ["mongod", "--replSet", "rs0"]
     ports:
-      - "27018:27017"
-    volumes:
-      - mongo2_data:/data/db
-    healthcheck:
-      test: echo 'db.runCommand("ping").ok' | mongosh --quiet | grep 1
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    logging:
-      options:
-        max-size: "10m"
-        max-file: "3"
+      - "27019:27017"
     networks:
       - crackhash-net
 
   mongo3:
-    image: mongo:7.0
-    command: mongod --replSet rs0 --bind_ip_all --logpath /proc/1/fd/1 --logappend --quiet
+    image: mongo
+    command: ["mongod", "--replSet", "rs0"]
     ports:
-      - "27019:27017"
-    volumes:
-      - mongo3_data:/data/db
-    healthcheck:
-      test: echo 'db.runCommand("ping").ok' | mongosh --quiet | grep 1
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    logging:
-      options:
-        max-size: "10m"
-        max-file: "3"
+      - "27020:27017"
     networks:
       - crackhash-net
 
   mongo-init:
-    image: mongo:7.0
+    image: mongo:latest
     depends_on:
-      mongo1:
-        condition: service_healthy
-      mongo2:
-        condition: service_healthy
-      mongo3:
-        condition: service_healthy
+      - mongo1
+      - mongo2
+      - mongo3
     command: >
       bash -c "
-        until mongosh --host mongo1 --eval \"print('waited for connection')\"; do
-          sleep 2
-        done && mongosh --host mongo1 --eval \"
-          rs.status().ok || rs.initiate({
-            _id: 'rs0',
-            members: [
-              { _id: 0, host: 'mongo1:27017', priority: 2 },
-              { _id: 1, host: 'mongo2:27017', priority: 1 },
-              { _id: 2, host: 'mongo3:27017', priority: 1, arbiterOnly: true }
-            ]
-          })
+        echo 'Waiting for MongoDB nodes...' &&
+        sleep 10 &&
+        echo 'Checking replica set status...' &&
+        mongosh --host mongo1:27017 --quiet --eval \"
+          try {
+            rs_status = rs.status();
+            print('Replica set already initialized. Status:');
+            printjson(rs_status.ok);
+          } catch (e) {
+            print('Replica set not initialized, attempting initiation...');
+            rs.initiate({ _id: 'rs0', members: [ { _id: 0, host: 'mongo1:27017' }, { _id: 1, host: 'mongo2:27017' }, { _id: 2, host: 'mongo3:27017' } ]});
+            print('Replica set initiation command sent.');
+          }
         \"
       "
     networks:
-      - crackhash-net
+    - crackhash-net
 
 volumes:
   rabbitmq_data:
