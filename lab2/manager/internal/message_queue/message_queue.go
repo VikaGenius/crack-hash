@@ -1,25 +1,22 @@
-// manager/internal/rabbitmq/manager_queue.go
 package message_queue
 
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log"
-	"time"
 
 	"manager/internal/models"
-
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
 type ManagerQueue struct {
-	conn      *amqp.Connection
-	channel   *amqp.Channel
-	queueName string
+	conn         *amqp.Connection
+	channel      *amqp.Channel
+	tasksQueue   string
+	resultsQueue string
 }
 
-func NewManagerQueue(url, queueName string) (*ManagerQueue, error) {
+func NewManagerQueue(url, tasksQueue, resultsQueue string) (*ManagerQueue, error) {
 	conn, err := amqp.Dial(url)
 	if err != nil {
 		return nil, err
@@ -31,8 +28,24 @@ func NewManagerQueue(url, queueName string) (*ManagerQueue, error) {
 		return nil, err
 	}
 
+	// Объявляем очередь для задач
 	_, err = channel.QueueDeclare(
-		queueName,
+		tasksQueue,
+		true,  // durable
+		false, // delete when unused
+		false, // exclusive
+		false, // no-wait
+		nil,   // arguments
+	)
+	if err != nil {
+		channel.Close()
+		conn.Close()
+		return nil, err
+	}
+
+	// Объявляем очередь для результатов
+	_, err = channel.QueueDeclare(
+		resultsQueue,
 		true,  // durable
 		false, // delete when unused
 		false, // exclusive
@@ -46,18 +59,11 @@ func NewManagerQueue(url, queueName string) (*ManagerQueue, error) {
 	}
 
 	return &ManagerQueue{
-		conn:      conn,
-		channel:   channel,
-		queueName: queueName,
+		conn:         conn,
+		channel:      channel,
+		tasksQueue:   tasksQueue,
+		resultsQueue: resultsQueue,
 	}, nil
-}
-
-func (q *ManagerQueue) Close() error {
-	if err := q.channel.Close(); err != nil {
-		q.conn.Close()
-		return err
-	}
-	return q.conn.Close()
 }
 
 func (q *ManagerQueue) PublishTask(ctx context.Context, task models.TaskMessage) error {
@@ -66,12 +72,9 @@ func (q *ManagerQueue) PublishTask(ctx context.Context, task models.TaskMessage)
 		return err
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-
 	return q.channel.PublishWithContext(ctx,
 		"",           // exchange
-		q.queueName,  // routing key
+		q.tasksQueue, // routing key
 		false,        // mandatory
 		false,        // immediate
 		amqp.Publishing{
@@ -82,16 +85,12 @@ func (q *ManagerQueue) PublishTask(ctx context.Context, task models.TaskMessage)
 }
 
 func (q *ManagerQueue) ConsumeResults(handler func(result models.ResultMessage) error) error {
-	if err := q.channel.Qos(
-		1,     // prefetch count
-		0,     // prefetch size
-		false, // global
-	); err != nil {
+	if err := q.channel.Qos(1, 0, false); err != nil {
 		return err
 	}
 
 	msgs, err := q.channel.Consume(
-		q.queueName, // queue
+		q.resultsQueue,
 		"",          // consumer
 		false,       // auto-ack
 		false,       // exclusive
@@ -108,22 +107,13 @@ func (q *ManagerQueue) ConsumeResults(handler func(result models.ResultMessage) 
 			var result models.ResultMessage
 			if err := json.Unmarshal(msg.Body, &result); err != nil {
 				log.Printf("Failed to unmarshal result: %v", err)
-				msg.Nack(false, false) // requeue
+				msg.Nack(false, true)
 				continue
 			}
-
-			if result.RequestId == "" || result.PartNumber < 0 || len(result.Answers) == 0 {
-				log.Printf("Invalid result received: %+v", result)
-				msg.Nack(false, false) // Не requeue невалидный результат
-				continue
-			}
-
-			fmt.Print("Consume result: ")
-			fmt.Println(result)
 
 			if err := handler(result); err != nil {
 				log.Printf("Failed to handle result: %v", err)
-				msg.Nack(false, true) // requeue
+				msg.Nack(false, true)
 				continue
 			}
 
@@ -132,4 +122,12 @@ func (q *ManagerQueue) ConsumeResults(handler func(result models.ResultMessage) 
 	}()
 
 	return nil
+}
+
+func (q *ManagerQueue) Close() error {
+	if err := q.channel.Close(); err != nil {
+		q.conn.Close()
+		return err
+	}
+	return q.conn.Close()
 }

@@ -28,7 +28,7 @@ func main() {
 	}()
 
 	rabbitURL := os.Getenv("RABBITMQ_URL")
-	queue, err := mq.NewManagerQueue(rabbitURL, "crack_hash_tasks")
+	queue, err := mq.NewManagerQueue(rabbitURL, "tasks", "results")
 	if err != nil {
 		log.Fatalf("Failed to initialize RabbitMQ: %v", err)
 	}

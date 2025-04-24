@@ -83,17 +83,11 @@ func generateAndCheckCombinations(alphabet []string, maxLength int, start int, e
             }
             currentIndex++
             if currentIndex >= end {
-                if len(answers) == 0 {
-                    answers = append(answers, "Not found")
-                }
                 return answers
             }
         }
     }
 
-    if len(answers) == 0 {
-        answers = append(answers, "Not found")
-    }
     return answers
 }
 

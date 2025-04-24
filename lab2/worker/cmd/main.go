@@ -15,7 +15,7 @@ import (
 func main() {
     managerURL := os.Getenv("MANAGER_URL")
 	rabbitURL := os.Getenv("RABBITMQ_URL")	
-	queue, err := mq.NewWorkerQueue(rabbitURL, "crack_hash_tasks")
+	queue, err := mq.NewWorkerQueue(rabbitURL, "tasks", "results")
 	if err != nil {
 		log.Fatalf("Failed to initialize RabbitMQ: %v", err)
 	}

@@ -84,10 +84,8 @@ func (s *Service) UpdateRequest(requestID string, partNumber int, answers []stri
 	fmt.Print("Получаю результат от воркера: ")
 	fmt.Println(answers)
 
-	if answers[0] != "Not found" {
-		req.Data = append(req.Data, answers...)
-	}
-	
+	req.Data = append(req.Data, answers...)
+
     req.CompletedParts[partNumber] = true
 	completedCount := 0
     for _, done := range req.CompletedParts {
@@ -138,45 +136,30 @@ func (s *Service) distributeWork(req *models.CrackRequest) {
 	alphabet := generateAlphabet()
 	partCount := len(s.workers)
 
-	const MaxRetries = 3
-	retryCounts := make(map[int]int)
 
-	for range MaxRetries {
-		for partNumber := range partCount {
-			if req.CompletedParts[partNumber] {
-				continue
-			}
-
-			// Пропускаем те, которые уже дошли до лимита
-			if retryCounts[partNumber] >= MaxRetries {
-				continue
-			}
-
-			task := models.TaskMessage{
-				RequestId:  req.RequestID,
-				PartNumber: partNumber,
-				PartCount:  partCount,
-				Hash:       req.Hash,
-				MaxLength:  req.MaxLength,
-				Alphabet:   alphabet,
-			}
-
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-
-			err := s.queue.PublishTask(ctx, task)
-			if err != nil {
-				log.Printf("Не удалось отправить part %d (%s): %v", partNumber, req.RequestID, err)
-			}
-
-			retryCounts[partNumber]++
+	for partNumber := range partCount {
+		if req.CompletedParts[partNumber] {
+			continue
 		}
 
-		// Можно сделать паузу между попытками
-		time.Sleep(10 * time.Second)
+		task := models.TaskMessage{
+			RequestId:  req.RequestID,
+			PartNumber: partNumber,
+			PartCount:  partCount,
+			Hash:       req.Hash,
+			MaxLength:  req.MaxLength,
+			Alphabet:   alphabet,
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		err := s.queue.PublishTask(ctx, task)
+		if err != nil {
+			log.Printf("Не удалось отправить part %d (%s): %v", partNumber, req.RequestID, err)
+		}
 	}
 }
-
 
 func generateAlphabet() []string {
     alphabet := make([]string, 0, 36)
