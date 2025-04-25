@@ -9,32 +9,32 @@ import (
 	"sync"
 	"time"
 
-	"manager/internal/models"
-    "manager/internal/repository"
 	mq "manager/internal/message_queue"
+	"manager/internal/models"
+	"manager/internal/repository"
 )
 
 type Service struct {
-    requests map[string]*models.CrackRequest //хранит задачи по их ID
-    mu       sync.RWMutex            //для потокобезопасного доступа к requests
-    workers  []string                //адреса воркеров
-    repo     *repository.MongoRepository
-	queue     *mq.ManagerQueue
+	requests map[string]*models.CrackRequest //хранит задачи по их ID
+	mu       sync.RWMutex                    //для потокобезопасного доступа к requests
+	workers  []string                        //адреса воркеров
+	repo     *repository.MongoRepository
+	queue    *mq.ManagerQueue
 }
 
 const (
-    StatusInProgress string = "IN_PROGRESS"
-    StatusReady      string = "READY"
-    StatusError      string = "ERROR"
-    StatusPartiallyReady string = "PARTIALLY_READY"
+	StatusInProgress     string = "IN_PROGRESS"
+	StatusReady          string = "READY"
+	StatusError          string = "ERROR"
+	StatusPartiallyReady string = "PARTIALLY_READY"
 )
 
-func NewService(workers []string, repo *repository.MongoRepository, queue *mq.ManagerQueue,) *Service {
-    service := &Service{
+func NewService(workers []string, repo *repository.MongoRepository, queue *mq.ManagerQueue) *Service {
+	service := &Service{
 		repo:     repo,
-        workers:  workers,
+		workers:  workers,
 		requests: make(map[string]*models.CrackRequest),
-		queue: queue,
+		queue:    queue,
 	}
 
 	//запускаем consumer для результатов
@@ -52,8 +52,8 @@ func (s *Service) StartCrack(hash string, maxLength int) (string, error) {
 	totalWorkers := len(s.workers)
 	req := models.NewCrackRequest(hash, maxLength, totalWorkers)
 	for i := range totalWorkers {
-        req.CompletedParts[i] = false
-    }
+		req.CompletedParts[i] = false
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -84,23 +84,25 @@ func (s *Service) UpdateRequest(requestID string, partNumber int, answers []stri
 	fmt.Print("Получаю результат от воркера: ")
 	fmt.Println(answers)
 
-	req.Data = append(req.Data, answers...)
+	if req.Status != StatusReady {
+		req.Data = append(req.Data, answers...)
+	}
 
-    req.CompletedParts[partNumber] = true
+	req.CompletedParts[partNumber] = true
 	completedCount := 0
-    for _, done := range req.CompletedParts {
-        if done {
-            completedCount++
-        }
-    }
-    req.Progress = (completedCount * 100) / req.Workers
-    
-    if req.Progress >= 99 {
-        req.Status = StatusReady
-        req.Progress = 100
-    } else {
-        req.Status = StatusInProgress
-    }
+	for _, done := range req.CompletedParts {
+		if done {
+			completedCount++
+		}
+	}
+	req.Progress = (completedCount * 100) / req.Workers
+
+	if req.Progress >= 99 {
+		req.Status = StatusReady
+		req.Progress = 100
+	} else {
+		req.Status = StatusInProgress
+	}
 
 	//обновляем в БД
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -136,7 +138,6 @@ func (s *Service) distributeWork(req *models.CrackRequest) {
 	alphabet := generateAlphabet()
 	partCount := len(s.workers)
 
-
 	for partNumber := range partCount {
 		if req.CompletedParts[partNumber] {
 			continue
@@ -162,22 +163,22 @@ func (s *Service) distributeWork(req *models.CrackRequest) {
 }
 
 func generateAlphabet() []string {
-    alphabet := make([]string, 0, 36)
-    for ch := 'a'; ch <= 'z'; ch++ {
-        alphabet = append(alphabet, string(ch))
-    }
-    for ch := '0'; ch <= '9'; ch++ {
-        alphabet = append(alphabet, string(ch))
-    }
-    return alphabet
+	alphabet := make([]string, 0, 36)
+	for ch := 'a'; ch <= 'z'; ch++ {
+		alphabet = append(alphabet, string(ch))
+	}
+	for ch := '0'; ch <= '9'; ch++ {
+		alphabet = append(alphabet, string(ch))
+	}
+	return alphabet
 }
 
 func printProgress(requestId string, progress int) {
-    barWidth := 50
-    filled := progress * barWidth / 100
-    bar := strings.Repeat("=", filled) + strings.Repeat(" ", barWidth-filled)
-    fmt.Printf("\rЗадача %s: [%s] %d%%", requestId, bar, progress)
-    fmt.Println()
+	barWidth := 50
+	filled := progress * barWidth / 100
+	bar := strings.Repeat("=", filled) + strings.Repeat(" ", barWidth-filled)
+	fmt.Printf("\rЗадача %s: [%s] %d%%", requestId, bar, progress)
+	fmt.Println()
 }
 
 func (s *Service) restorePendingRequests() {
