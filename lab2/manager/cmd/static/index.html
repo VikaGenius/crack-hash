@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>CrackHash UI</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 30px; }
+    input, button { padding: 8px; margin: 5px 0; width: 100%; }
+    #progress-bar { height: 20px; background: #eee; border: 1px solid #ccc; margin-top: 10px; }
+    #progress { height: 100%; background: #4caf50; width: 0%; }
+    .result { margin-top: 20px; }
+  </style>
+</head>
+<body>
+  <h1>CrackHash</h1>
+
+  <label>MD5-хэш:</label>
+  <input type="text" id="hashInput" placeholder="Например: 098f6bcd4621d373cade4e832627b4f6">
+
+  <label>Максимальная длина строки:</label>
+  <input type="number" id="maxLengthInput" value="4" min="1">
+
+  <button onclick="startCrack()">Начать взлом</button>
+
+  <div id="progress-bar"><div id="progress"></div></div>
+  <div class="result" id="statusText"></div>
+  <div class="result" id="foundResults"></div>
+
+  <script>
+    let requestId = null;
+
+    function startCrack() {
+      const hash = document.getElementById("hashInput").value.trim();
+      const maxLength = parseInt(document.getElementById("maxLengthInput").value);
+
+      if (!hash || isNaN(maxLength)) {
+        alert("Пожалуйста, введите корректные данные.");
+        return;
+      }
+
+      fetch("/api/hash/crack", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ hash, maxLength })
+      })
+      .then(res => res.json())
+      .then(data => {
+        requestId = data.requestId;
+        checkStatus();
+      })
+      .catch(err => alert("Ошибка при запуске: " + err));
+    }
+
+    function checkStatus() {
+      if (!requestId) return;
+
+      fetch(`/api/hash/status?requestId=${requestId}`)
+        .then(res => res.json())
+        .then(data => {
+          document.getElementById("statusText").innerText = `Статус: ${data.status}, прогресс: ${data.progress}`;
+          document.getElementById("progress").style.width = data.progress;
+          
+          if (data.data && data.data.length > 0) {
+            document.getElementById("foundResults").innerHTML = `<strong>Результаты:</strong><br>${data.data.join("<br>")}`;
+          }
+
+          if (data.status !== "READY") {
+            setTimeout(checkStatus, 2000); // проверяем каждые 2 секунды
+          }
+        })
+        .catch(err => console.error("Ошибка при получении статуса:", err));
+    }
+  </script>
+</body>
+</html>

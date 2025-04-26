@@ -47,6 +47,7 @@ func main() {
     r := mux.NewRouter()
     r.HandleFunc("/api/hash/crack", hashHandler.StartCrackHandler).Methods("POST")
 	r.HandleFunc("/api/hash/status", hashHandler.StatusHandler).Methods("GET")
+	r.PathPrefix("/").Handler(http.FileServer(http.Dir("./static/")))
 
 	http.ListenAndServe(":8080", r)
 }
