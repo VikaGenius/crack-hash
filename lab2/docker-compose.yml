@@ -4,6 +4,7 @@ services:
   manager:
     build:
       context: ./manager
+    container_name: manager
     ports:
       - "8080:8080"
     environment:
@@ -21,6 +22,7 @@ services:
   worker1:
     build:
       context: ./worker
+    container_name: worker1
     environment:
       - MANAGER_URL=http://manager:8080
       - RABBITMQ_URL=amqp://admin:admin@rabbitmq:5672/
@@ -36,6 +38,7 @@ services:
   worker2:
     build:
       context: ./worker
+    container_name: worker2
     environment:
       - MANAGER_URL=http://manager:8080
       - RABBITMQ_URL=amqp://admin:admin@rabbitmq:5672/
@@ -50,6 +53,7 @@ services:
   worker3:
     build:
       context: ./worker
+    container_name: worker3
     environment:
       - MANAGER_URL=http://manager:8080
       - RABBITMQ_URL=amqp://admin:admin@rabbitmq:5672/
@@ -64,6 +68,7 @@ services:
   rabbitmq:
     image: rabbitmq:3-management
     hostname: rabbitmq
+    container_name: rabbitmq
     ports:
       - "5672:5672"
       - "15672:15672"
@@ -83,25 +88,34 @@ services:
 
   mongo1:
     image: mongo
+    container_name: mongo1
     command: ["mongod", "--replSet", "rs0"]
     ports:
       - "27018:27017"
+    volumes:
+      - mongo1_data:/data/db
     networks:
       - crackhash-net
 
   mongo2:
     image: mongo
+    container_name: mongo2
     command: ["mongod", "--replSet", "rs0"]
     ports:
       - "27019:27017"
+    volumes:
+      - mongo2_data:/data/db
     networks:
       - crackhash-net
 
   mongo3:
     image: mongo
+    container_name: mongo3
     command: ["mongod", "--replSet", "rs0"]
     ports:
       - "27020:27017"
+    volumes:
+      - mongo3_data:/data/db
     networks:
       - crackhash-net
 
@@ -130,6 +144,23 @@ services:
       "
     networks:
     - crackhash-net
+
+  admin-server:
+      build:
+        context: ./admin-server
+      container_name: admin-server
+      ports:
+        - "9090:9090"
+      networks:
+        - crackhash-net
+      volumes:
+        - /var/run/docker.sock:/var/run/docker.sock
+      depends_on:
+        - manager
+        - rabbitmq
+        - mongo1
+        - mongo2
+        - mongo3
 
 volumes:
   rabbitmq_data:

@@ -1,9 +1,11 @@
-FROM golang:1.23
+FROM golang:1.24
 
 WORKDIR /app
 
 # Копируем файлы проекта
 COPY . .
+
+RUN apt-get update && apt-get install -y docker.io
 
 # Переходим в директорию с main.go
 WORKDIR /app/cmd

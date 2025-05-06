@@ -45,9 +45,31 @@ func main() {
     hashHandler := handlers.NewHashHandler(hashService)
 
     r := mux.NewRouter()
+	r.Use(corsMiddleware())
+
     r.HandleFunc("/api/hash/crack", hashHandler.StartCrackHandler).Methods("POST")
 	r.HandleFunc("/api/hash/status", hashHandler.StatusHandler).Methods("GET")
-	r.PathPrefix("/").Handler(http.FileServer(http.Dir("./static/")))
+
+	r.PathPrefix("/").Methods(http.MethodOptions).HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
 
 	http.ListenAndServe(":8080", r)
+}
+
+func corsMiddleware() mux.MiddlewareFunc {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			
+			if r.Method == http.MethodOptions {
+				w.WriteHeader(http.StatusOK)
+				return
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
 }

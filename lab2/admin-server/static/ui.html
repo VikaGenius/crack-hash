@@ -38,7 +38,11 @@
         return;
       }
 
-      fetch("/api/hash/crack", {
+      document.getElementById("statusText").innerText = "";
+      document.getElementById("foundResults").innerHTML = "";
+      document.getElementById("progress").style.width = "0%";
+
+      fetch("http://localhost:8080/api/hash/crack", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ hash, maxLength })
@@ -54,7 +58,7 @@
     function checkStatus() {
       if (!requestId) return;
 
-      fetch(`/api/hash/status?requestId=${requestId}`)
+      fetch(`http://localhost:8080/api/hash/status?requestId=${requestId}`)
         .then(res => res.json())
         .then(data => {
           document.getElementById("statusText").innerText = `Статус: ${data.status}, прогресс: ${data.progress}`;
@@ -68,7 +72,10 @@
             setTimeout(checkStatus, 2000); // проверяем каждые 2 секунды
           }
         })
-        .catch(err => console.error("Ошибка при получении статуса:", err));
+        .catch(err => {
+          console.error("Ошибка при получении статуса:", err);
+          setTimeout(checkStatus, 5000); // если ошибка - пробуем снова через 5 секунд
+        });
     }
   </script>
 </body>

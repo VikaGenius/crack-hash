@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Admin Panel</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        .container {
+            display: flex;
+            gap: 20px;
+        }
+        .button-column {
+            display: flex;
+            flex-direction: column;
+        }
+        button {
+            margin: 5px 0;
+            padding: 10px 20px;
+            min-width: 150px;
+            cursor: pointer;
+        }
+        .stop-btn {
+            background-color: #ff6b6b;
+            color: white;
+            border: none;
+        }
+        .start-btn {
+            background-color: #51cf66;
+            color: white;
+            border: none;
+        }
+        h1 {
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Admin Panel</h1>
+    <div class="container">
+        <div class="button-column">
+            <h3>Stop Services</h3>
+            <button class="stop-btn" onclick="stop('manager')">Stop Manager</button>
+            <button class="stop-btn" onclick="stop('rabbitmq')">Stop RabbitMQ</button>
+            <button class="stop-btn" onclick="stop('mongo1')">Stop Mongo1</button>
+            <button class="stop-btn" onclick="stop('mongo2')">Stop Mongo2</button>
+            <button class="stop-btn" onclick="stop('mongo3')">Stop Mongo3</button>
+            <button class="stop-btn" onclick="stop('worker1')">Stop Worker1</button>
+            <button class="stop-btn" onclick="stop('worker2')">Stop Worker2</button>
+            <button class="stop-btn" onclick="stop('worker3')">Stop Worker3</button>
+        </div>
+        
+        <div class="button-column">
+            <h3>Start Services</h3>
+            <button class="start-btn" onclick="start('manager')">Start Manager</button>
+            <button class="start-btn" onclick="start('rabbitmq')">Start RabbitMQ</button>
+            <button class="start-btn" onclick="start('mongo1')">Start Mongo1</button>
+            <button class="start-btn" onclick="start('mongo2')">Start Mongo2</button>
+            <button class="start-btn" onclick="start('mongo3')">Start Mongo3</button>
+            <button class="start-btn" onclick="start('worker1')">Start Worker1</button>
+            <button class="start-btn" onclick="start('worker2')">Start Worker2</button>
+            <button class="start-btn" onclick="start('worker3')">Start Worker3</button>
+        </div>
+    </div>
+    <script>
+        function stop(service) {
+            fetch('/admin/stop', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ service: service })
+            }).then(resp => resp.text()).then(alert);
+        }
+        function start(service) {
+            fetch('/admin/start', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ service: service })
+            }).then(resp => resp.text()).then(alert);
+        }
+    </script>
+</body>
+</html>
